@@ -281,6 +281,74 @@ async def test_update_list_item(mock_patch, graph_client):
     assert "Graph API error: 403" in str(excinfo.value)
 
 
+@patch("requests.get")
+async def test_get_lists(mock_get, graph_client):
+    """Test get_lists returns all lists for a site."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "value": [
+            {
+                "id": "list1",
+                "displayName": "Tasks",
+                "list": {"template": "genericList"},
+            },
+            {
+                "id": "list2",
+                "displayName": "Documents",
+                "list": {"template": "documentLibrary"},
+            },
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    result = await graph_client.get_lists("site1")
+    assert len(result["value"]) == 2
+    assert result["value"][0]["displayName"] == "Tasks"
+    call_url = mock_get.call_args[0][0]
+    assert "sites/site1/lists" in call_url
+
+
+@patch("requests.get")
+async def test_get_list_items(mock_get, graph_client):
+    """Test get_list_items fetches items with fields expanded."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "value": [
+            {"id": "1", "fields": {"Title": "Item A", "Status": "Active"}},
+            {"id": "2", "fields": {"Title": "Item B", "Status": "Done"}},
+        ]
+    }
+    mock_get.return_value = mock_response
+
+    result = await graph_client.get_list_items("site1", "list1")
+    assert len(result["value"]) == 2
+    assert result["value"][0]["fields"]["Title"] == "Item A"
+    call_url = mock_get.call_args[0][0]
+    assert "sites/site1/lists/list1/items" in call_url
+    assert "$expand=fields" in call_url
+    assert "$top=100" in call_url
+
+
+@patch("requests.get")
+async def test_get_list_items_with_filter(mock_get, graph_client):
+    """Test get_list_items applies OData filter when provided."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "value": [{"id": "1", "fields": {"Title": "Item A", "Status": "Active"}}]
+    }
+    mock_get.return_value = mock_response
+
+    result = await graph_client.get_list_items(
+        "site1", "list1", filter_query="fields/Status eq 'Active'"
+    )
+    assert len(result["value"]) == 1
+    call_url = mock_get.call_args[0][0]
+    assert "$filter=" in call_url
+
+
 @patch("requests.post")
 async def test_create_site(mock_post, graph_client):
     """Test create_site sends POST with correct display name and alias."""
